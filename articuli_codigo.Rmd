@@ -1,0 +1,222 @@
+---
+title: "Articulo cafe"
+author: "Sebastian Fuentes González B83063"
+date: "7/8/2021"
+output: html_document
+---
+# 1. Preparación
+```{r}
+# COdigo
+library(tidyverse)
+setwd("C:/Users/sebas/Dropbox/ESTADISTICA/tercer_anio/primer_semestre/Experimentos/Articulo")
+base = read.csv("Cafe.csv")
+str(base)
+colnames(base)
+names(base)[names(base) == "ï..fecha"] = "fecha"
+base$filtro = factor(base$filtro)
+levels(base$filtro) = c("metal","papel","tela") 
+base$cafe = factor(base$cafe)
+levels(base$cafe) = c("dota","monteverde")
+
+# guardo el df
+save(base,file = "cafe.Rdata")
+```
+
+
+# Grafico
+```{r}
+library(ggplot2)
+ggplot(base, aes(x=cafe, y=calificacion, group = filtro, color=filtro)) +
+   geom_point()+
+   stat_summary(fun ="mean", geom="line", aes(linetype = filtro))+
+   xlab("Subrgión del cafe") +
+   ylab("Calificación") +
+   theme_classic()
+
+```
+
+
+# Prueba de Hipótesis
+$$H0: (\alpha\beta)_{ij}=0$$
+El efecto que tiene el filtro sobre la calificación promedio es el mismo para todos los niveles de café.
+
+
+```{r}
+options(contrasts = c("contr.sum","contr.poly"))
+mod1 = aov(calificacion~cafe*filtro,base)
+anova(mod1)
+
+# Probamos homocedasticidad:
+bartlett.test(base$calificacion~interaction(base$filtro,base$cafe))
+# Probamos normalidad:
+shapiro.test(mod1$residuals)
+library(car)
+qqPlot(mod1$residuals)
+
+
+pf = anova(mod1)[3,5]
+pf
+pf<0.05
+```
+
+
+```{r}
+# Minimos cuadrados ponderados
+options(contrasts = c("contr.sum","contr.poly"))
+modres = lm(abs(mod1$residuals) ~ filtro * cafe , data = base)
+s = predict(modres)
+w = 1/(s^2)
+print(w)
+mod_prueba = lm(calificacion ~ filtro * cafe , data = base, weights = w)
+anova(mod_prueba)
+```
+
+
+Dado que se tiene una probabilidad alta de error tipo I, no se rechaza la H0 con 5% de significancia. Se asume que la interacción entre el fitro y el cafe no es importante
+
+
+```{r}
+base$tratamiento = factor(base$tratamiento)
+
+linea_rojan = mean(base$calificacion) # Media de la respuesta
+
+
+ggplot(data = base , mapping = aes(x = tratamiento , y = calificacion, fill = tratamiento )) +
+  geom_boxplot(show.legend = FALSE, color = "black", fill = "blue")  +  
+  stat_summary(fun = mean , geom = "point" , shape = 18 , size = 3, color = "black", show.legend = FALSE) +
+  theme_classic() +
+  geom_hline(yintercept = linea_rojan, colour = "red") +
+   xlab("Tratamiento") +
+   ylab("Calificación") 
+   
+```
+
+```{r}
+library(car)
+qqPlot(mod1$residuals)
+```
+
+
+```{r}
+qplot(sample  = mod1$residuals, xlab = "Cuantiles", ylab = "Residuales del modelo", color = I("blue"), show.legend = FALSE) + theme_classic() 
+```
+
+
+# Prueba de hipótesis referente al factor de diseño
+$$H0: \mu_{.1} = \mu_{.2} = \mu_{.3}$$
+Los tres niveles del tipo de filtro producen la misma calificación promedio en general sin tomar en cuenta el nivel de café.
+```{r}
+options(contrasts = c("contr.sum","contr.poly"))
+mod2 = lm(calificacion~cafe+filtro,base)
+anova(mod2)
+
+table(base$filtro)
+model.tables(mod1)
+betas = c(-2.433,-11.433,13.867)
+
+SCFil = 10*sum(betas^2)
+CMFil = SCFil/(3-1)
+CMRes = anova(mod2)[3,3]
+
+f = CMFil/CMRes
+n = nrow(base)
+k = length(mod2$coefficients)
+
+pf(f,(3-1),(n-k),lower.tail = F)
+pf(f,(3-1),(n-k),lower.tail = F)<0.05
+```
+
+Se rechaza la hipótesis nula con un nivel de significancia de 5% puesto que la probabilidad de cometer error tipo I es baja (0.017). Entonces se concluye que sí hay diferencia en los promedios de calificación entre los diferentes tipos de filtro.
+
+# Intervalos de confianza
+
+```{r}
+m = tapply(base$calificacion,base$filtro,mean)
+d_tm = m[3]-m[1]
+d_tp = m[3]-m[2]
+d_mp = m[1]-m[2]
+
+CMRes.1 = anova(mod2)[3,3] 
+ee = sqrt(2*(CMRes.1)/10)
+
+diff = c(d_tm,d_tp,d_mp)
+names(diff)=c("tela - metal","tela - papel","metal - papel")
+q = diff/ee
+
+n = nrow(base)
+k = length(mod2$coefficients)
+p = ptukey(q*sqrt(2),3,n-k,lower.tail = F)
+p<0.05
+t = qt(0.95,n-k)
+
+li = diff[2]-t*ee
+```
+
+Se ha encontrado que la calificación promedio del café con el filtro de tela es mayor que con el filtro de papel. En el caso de la calificación promedio del café con el filtro de tela y el filtro de metal, aunque no hay una diferencia significativa la probabilidad no llega a ser tan alta como para concluir que no existe una diferencia relevante en la utilización de ambos filtros. Diferente es en el caso de la calificación promedio del café con el filtro de metal y el filtro de papel, donde no se diferencia uno del otro. 
+
+Con 95% de confianza se puede esperar que la calificación promedio del café cuando este se prepara con filtro de tela sea al menos 11.15 puntos mayor que con el filtro de papel.
+
+
+
+
+# MCP
+
+```{r}
+# Minimos cuadrados ponderados
+options(contrasts = c("contr.sum","contr.poly"))
+modres = lm(abs(mod1$residuals) ~ filtro * cafe , data = base)
+s = predict(modres)
+w = 1/(s^2)
+print(w)
+mod_prueba = lm(calificacion ~ filtro * cafe , data = base, weights = w)
+anova(mod_prueba)
+```
+
+```{r}
+options(contrasts = c("contr.sum","contr.poly"))
+mod_prueba = lm(calificacion ~ cafe + filtro , data = base, weights = w)
+anova(mod_prueba)
+
+model_tables = model.tables(aov(mod_prueba))
+model_tables
+betas = model_tables$tables$filtro
+
+SCFil = 10*sum(betas^2)
+CMFil = SCFil/(3-1)
+CMRes = anova(mod_prueba)[3,3]
+
+f = CMFil/CMRes
+n = nrow(base)
+k = length(mod_prueba$coefficients)
+
+pf(f,(3-1),(n-k),lower.tail = F)  # = 2.748153e-30 con café primero y 3.13909e-29 de segundo , entonces se llega a la misma conclusión que sin MCP
+pf(f,(3-1),(n-k),lower.tail = F)<0.05
+```
+
+```{r}
+
+# SI cambian, entonces preguntar al profe
+m = tapply(base$calificacion,base$filtro,mean)
+d_tm = m[3]-m[1]
+d_tp = m[3]-m[2]
+d_mp = m[1]-m[2]
+
+CMRes.1 = anova(mod_prueba)[3,3] 
+ee = sqrt(2*(CMRes.1)/10)
+
+diff = c(d_tm,d_tp,d_mp)
+names(diff)=c("tela - metal","tela - papel","metal - papel")
+q = diff/ee
+
+n = nrow(base)
+k = length(mod_prueba$coefficients)
+p = ptukey(q*sqrt(2),3,n-k,lower.tail = F)
+p<0.05
+t = qt(0.95,n-k)
+
+li = diff-t*ee
+li
+```
+
+
+
